@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"image/color"
 	"log"
@@ -12,13 +13,18 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
-	"golang.org/x/image/font/basicfont"
+	"golang.org/x/image/font/gofont/gobold"
 )
 
 const (
-	screenW = 240
-	screenH = 136
+	screenW = 320
+	screenH = 240
 	scale   = 4
+
+	lcdW    = 240
+	lcdH    = 136
+	lcdOffX = 40
+	lcdOffY = 60
 
 	nLanes   = 5
 	horizonY = 28.0
@@ -29,12 +35,31 @@ const (
 
 var laneX = [nLanes]float32{40, 80, 120, 160, 200}
 
-// Sweetie-16 palette
+// LCD palette (sweetie-16 inspired)
 var (
-	lcdBg  = color.RGBA{0xf4, 0xf4, 0xf4, 0xff} // #12
-	lcdFg  = color.RGBA{0x1a, 0x1c, 0x2c, 0xff} // #0
-	lcdDim = color.RGBA{0x94, 0xb0, 0xc2, 0xff} // #13
+	lcdBg  = color.RGBA{0xc8, 0xcc, 0xb8, 0xff} // pale olive — classic G&W LCD
+	lcdFg  = color.RGBA{0x1a, 0x1c, 0x2c, 0xff}
+	lcdDim = color.RGBA{0x6a, 0x76, 0x6e, 0xff}
 )
+
+// Bezel palette
+var (
+	bezelRed   = color.RGBA{0x8a, 0x1c, 0x1c, 0xff}
+	bezelTan   = color.RGBA{0xd8, 0xcf, 0xb6, 0xff}
+	bezelDark  = color.RGBA{0x3a, 0x2e, 0x24, 0xff}
+	wheatGold  = color.RGBA{0xb8, 0x9a, 0x5f, 0xff}
+	grassGreen = color.RGBA{0x55, 0x95, 0x42, 0xff}
+)
+
+var bezelFontSource *text.GoTextFaceSource
+
+func init() {
+	s, err := text.NewGoTextFaceSource(bytes.NewReader(gobold.TTF))
+	if err != nil {
+		log.Fatal(err)
+	}
+	bezelFontSource = s
+}
 
 type stateKind int
 
@@ -59,14 +84,22 @@ type Game struct {
 	spawnTimer int
 	frame      int
 	flash      int
-	font       *text.GoXFace
+
+	lcdImg *ebiten.Image
+
+	hudFont   *text.GoTextFace
+	titleFont *text.GoTextFace
+	smallFont *text.GoTextFace
 }
 
 func newGame() *Game {
 	return &Game{
 		state:      stateTitle,
 		playerLane: 2,
-		font:       text.NewGoXFace(basicfont.Face7x13),
+		lcdImg:     ebiten.NewImage(lcdW, lcdH),
+		hudFont:    &text.GoTextFace{Source: bezelFontSource, Size: 8},
+		titleFont:  &text.GoTextFace{Source: bezelFontSource, Size: 14},
+		smallFont:  &text.GoTextFace{Source: bezelFontSource, Size: 8},
 	}
 }
 
@@ -181,11 +214,21 @@ func circStroke(dst *ebiten.Image, cx, cy, r float32, c color.Color) {
 	vector.StrokeCircle(dst, cx, cy, r, 1, c, false)
 }
 
-func drawText(dst *ebiten.Image, s string, x, y float64, face *text.GoXFace, c color.Color) {
+func drawText(dst *ebiten.Image, s string, x, y float64, face text.Face, c color.Color) {
 	opts := &text.DrawOptions{}
 	opts.GeoM.Translate(x, y)
 	opts.ColorScale.ScaleWithColor(c)
 	text.Draw(dst, s, face, opts)
+}
+
+func drawTextCentered(dst *ebiten.Image, s string, cx, y float64, face text.Face, c color.Color) {
+	w, _ := text.Measure(s, face, 0)
+	drawText(dst, s, cx-w/2, y, face, c)
+}
+
+func drawTextRight(dst *ebiten.Image, s string, rx, y float64, face text.Face, c color.Color) {
+	w, _ := text.Measure(s, face, 0)
+	drawText(dst, s, rx-w, y, face, c)
 }
 
 // --- scene drawing ---
@@ -203,22 +246,29 @@ func (g *Game) drawRoad(dst *ebiten.Image) {
 		px(dst, lx-1, y, lcdDim)
 		px(dst, rx+1, y, lcdDim)
 	}
-	// left tree
-	rectFill(dst, 14, 44, 3, 10, lcdFg)
-	circFill(dst, 15, 42, 5, lcdFg)
-	// right field hint
-	for i := 0; i < 5; i++ {
-		fi := float32(i)
-		line(dst, 225, 50+fi*4, 235, 46+fi*4, lcdDim)
-	}
+	// LCD tree silhouette on the left shoulder
+	drawLcdTree(dst, 14, 70)
+}
+
+func drawLcdTree(dst *ebiten.Image, x, y float32) {
+	// trunk
+	rectFill(dst, x+3, y, 3, 10, lcdFg)
+	// blobby canopy
+	circFill(dst, x+4, y-3, 5, lcdFg)
+	circFill(dst, x+8, y-1, 4, lcdFg)
+	circFill(dst, x, y-1, 4, lcdFg)
+	circFill(dst, x+5, y-7, 3, lcdFg)
 }
 
 func (g *Game) drawHud(dst *ebiten.Image) {
-	drawText(dst, "SCORE", 4, 2, g.font, lcdFg)
-	drawText(dst, fmt.Sprintf("%03d", g.score), 40, 2, g.font, lcdFg)
-	drawText(dst, "MISS", 170, 2, g.font, lcdFg)
+	drawText(dst, "PONT", 4, 2, g.hudFont, lcdFg)
+	drawText(dst, fmt.Sprintf("%03d", g.score), 32, 2, g.hudFont, lcdFg)
+	// Reserve fixed slot for miss markers on the right
+	missSlotRight := float64(lcdW - 4)
+	missSlotX := missSlotRight - float64(maxMiss*8)
+	drawTextRight(dst, "HIBA", missSlotX-2, 2, g.hudFont, lcdFg)
 	for i := 0; i < g.miss; i++ {
-		drawText(dst, "X", float64(206+i*8), 2, g.font, lcdFg)
+		drawText(dst, "X", missSlotX+float64(i*8), 2, g.hudFont, lcdFg)
 	}
 }
 
@@ -275,9 +325,6 @@ func (g *Game) drawPlay(dst *ebiten.Image) {
 func (g *Game) drawTitle(dst *ebiten.Image) {
 	dst.Fill(lcdBg)
 	g.drawRoad(dst)
-	drawText(dst, "RABBIT  ROLLER", 60, 0, g.font, lcdFg)
-	drawText(dst, "GAME & WATCH", 2, 0, g.font, lcdFg)
-	drawText(dst, "WIDE SCREEN", 158, 0, g.font, lcdFg)
 	// preview scooters
 	for i := 0; i < nLanes; i++ {
 		g.drawScooter(dst, laneX[i], playerY, false)
@@ -292,19 +339,65 @@ func (g *Game) drawTitle(dst *ebiten.Image) {
 		drawRabbit(dst, x, y, fake.t)
 	}
 	if (g.frame/30)%2 == 0 {
-		drawText(dst, "PRESS Z TO START", 60, 58, g.font, lcdFg)
+		drawTextCentered(dst, "NYOMJ Z-T A KEZDÉSHEZ", 120, 56, g.hudFont, lcdFg)
 	}
-	drawText(dst, "ARROWS MOVE  Z START", 48, 72, g.font, lcdFg)
+	drawTextCentered(dst, "NYILAK MOZGÁS   Z START", 120, 72, g.hudFont, lcdFg)
 }
 
 func (g *Game) drawOver(dst *ebiten.Image) {
 	g.drawPlay(dst)
 	rectFill(dst, 60, 50, 120, 36, lcdBg)
 	rectStroke(dst, 60, 50, 120, 36, lcdFg)
-	drawText(dst, "GAME  OVER", 80, 54, g.font, lcdFg)
-	drawText(dst, fmt.Sprintf("SCORE  %03d", g.score), 76, 66, g.font, lcdFg)
+	drawTextCentered(dst, "VÉGE", 120, 54, g.hudFont, lcdFg)
+	drawTextCentered(dst, fmt.Sprintf("PONT  %03d", g.score), 120, 66, g.hudFont, lcdFg)
 	if (g.frame/30)%2 == 0 {
-		drawText(dst, "Z TO RESTART", 74, 76, g.font, lcdFg)
+		drawTextCentered(dst, "Z = ÚJRA", 120, 76, g.hudFont, lcdFg)
+	}
+}
+
+// --- bezel (Game & Watch case art) ---
+
+func (g *Game) drawBezel(dst *ebiten.Image) {
+	// Outer red frame
+	dst.Fill(bezelRed)
+	// Tan inner panel
+	rectFill(dst, 4, 4, screenW-8, screenH-8, bezelTan)
+
+	// "JÁTSZ & NÉZZ" boxed logo (top-left)
+	logoX, logoY, logoW, logoH := float32(8), float32(6), float32(56), float32(36)
+	rectStroke(dst, logoX, logoY, logoW, logoH, bezelDark)
+	rectStroke(dst, logoX+1, logoY+1, logoW-2, logoH-2, bezelDark)
+	drawTextCentered(dst, "JÁTSZ", float64(logoX+logoW/2), float64(logoY+4), g.smallFont, bezelDark)
+	drawTextCentered(dst, "&", float64(logoX+logoW/2), float64(logoY+15), g.smallFont, bezelDark)
+	drawTextCentered(dst, "NÉZZ", float64(logoX+logoW/2), float64(logoY+25), g.smallFont, bezelDark)
+
+	// Center title "NYÚLÓS RUGÓS"
+	drawTextCentered(dst, "NYÚLÓS RUGÓS", float64(screenW)/2, 18, g.titleFont, bezelDark)
+
+	// Wheat field on right bezel (printed art)
+	g.drawWheatField(dst, 286, 78)
+
+	// LCD inner frame (dark groove around the active screen)
+	rectFill(dst, lcdOffX-4, lcdOffY-4, lcdW+8, lcdH+8, bezelDark)
+	rectFill(dst, lcdOffX-2, lcdOffY-2, lcdW+4, lcdH+4, color.RGBA{0x15, 0x15, 0x18, 0xff})
+}
+
+func (g *Game) drawWheatField(dst *ebiten.Image, vx, vy float32) {
+	// diagonal hatching emanating from a vanishing point — wheat rows
+	for i := 0; i < 14; i++ {
+		angle := math.Pi*0.55 + float64(i)*math.Pi*0.025
+		ex := vx + float32(math.Cos(angle)*46)
+		ey := vy + float32(math.Sin(angle)*46)
+		line(dst, vx, vy, ex, ey, wheatGold)
+	}
+	// grass tufts along the road edge
+	for i := 0; i < 7; i++ {
+		gy := vy + 6 + float32(i)*8
+		gx := vx - 6 - float32(i)
+		px(dst, gx, gy, grassGreen)
+		px(dst, gx+1, gy-1, grassGreen)
+		px(dst, gx-1, gy-1, grassGreen)
+		px(dst, gx, gy-2, grassGreen)
 	}
 }
 
@@ -330,14 +423,20 @@ func (g *Game) Update() error {
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
+	g.drawBezel(screen)
+
 	switch g.state {
 	case stateTitle:
-		g.drawTitle(screen)
+		g.drawTitle(g.lcdImg)
 	case statePlay:
-		g.drawPlay(screen)
+		g.drawPlay(g.lcdImg)
 	case stateOver:
-		g.drawOver(screen)
+		g.drawOver(g.lcdImg)
 	}
+
+	opts := &ebiten.DrawImageOptions{}
+	opts.GeoM.Translate(lcdOffX, lcdOffY)
+	screen.DrawImage(g.lcdImg, opts)
 }
 
 func (g *Game) Layout(_, _ int) (int, int) {

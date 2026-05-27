@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"embed"
 	"fmt"
 	"image/color"
+	"image/png"
 	"log"
 	"math"
 	"math/rand"
@@ -17,14 +19,19 @@ import (
 )
 
 const (
-	screenW = 320
-	screenH = 240
-	scale   = 4
+	// Logical screen matches the bezel artwork (assets/background.png) 1:1.
+	screenW = 1200
+	screenH = 896
 
-	lcdW    = 240
-	lcdH    = 136
-	lcdOffX = 40
-	lcdOffY = 60
+	// Game world is rendered to this offscreen, then scaled into the LCD cutout.
+	lcdW = 240
+	lcdH = 136
+
+	// Olive LCD screen rectangle within the bezel image (measured from the PNG).
+	lcdScreenX = 331
+	lcdScreenY = 203
+	lcdScreenW = 537
+	lcdScreenH = 399
 
 	nLanes   = 5
 	horizonY = 28.0
@@ -35,23 +42,44 @@ const (
 
 var laneX = [nLanes]float32{40, 80, 120, 160, 200}
 
-// LCD palette (sweetie-16 inspired)
+// How the lcdW×lcdH world maps onto the bezel's LCD cutout (uniform fit, centered).
 var (
-	lcdBg  = color.RGBA{0xc8, 0xcc, 0xb8, 0xff} // pale olive — classic G&W LCD
+	lcdScale = float64(lcdScreenW) / float64(lcdW)
+	lcdDrawX = float64(lcdScreenX)
+	lcdDrawY = float64(lcdScreenY) + (float64(lcdScreenH)-float64(lcdH)*lcdScale)/2
+)
+
+// LCD palette — lcdBg matches the bezel's printed screen olive so the
+// letterboxed margins blend into the case art.
+var (
+	lcdBg  = color.RGBA{0xbf, 0xc2, 0xa3, 0xff} // bezel screen olive
 	lcdFg  = color.RGBA{0x1a, 0x1c, 0x2c, 0xff}
 	lcdDim = color.RGBA{0x6a, 0x76, 0x6e, 0xff}
 )
 
-// Bezel palette
+//go:embed assets/background.png assets/scooter.png assets/rabbit_f0.png assets/rabbit_f1.png assets/rabbit_f2.png assets/rabbit_f3.png
+var assetsFS embed.FS
+
 var (
-	bezelRed   = color.RGBA{0x8a, 0x1c, 0x1c, 0xff}
-	bezelTan   = color.RGBA{0xd8, 0xcf, 0xb6, 0xff}
-	bezelDark  = color.RGBA{0x3a, 0x2e, 0x24, 0xff}
-	wheatGold  = color.RGBA{0xb8, 0x9a, 0x5f, 0xff}
-	grassGreen = color.RGBA{0x55, 0x95, 0x42, 0xff}
+	bgImg      *ebiten.Image
+	scooterImg *ebiten.Image
+	rabbitImgs [4]*ebiten.Image
 )
 
 var bezelFontSource *text.GoTextFaceSource
+
+func loadImg(name string) *ebiten.Image {
+	f, err := assetsFS.Open(name)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+	img, err := png.Decode(f)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return ebiten.NewImageFromImage(img)
+}
 
 func init() {
 	s, err := text.NewGoTextFaceSource(bytes.NewReader(gobold.TTF))
@@ -59,6 +87,12 @@ func init() {
 		log.Fatal(err)
 	}
 	bezelFontSource = s
+
+	bgImg = loadImg("assets/background.png")
+	scooterImg = loadImg("assets/scooter.png")
+	for i := range rabbitImgs {
+		rabbitImgs[i] = loadImg(fmt.Sprintf("assets/rabbit_f%d.png", i))
+	}
 }
 
 type stateKind int
@@ -87,9 +121,7 @@ type Game struct {
 
 	lcdImg *ebiten.Image
 
-	hudFont   *text.GoTextFace
-	titleFont *text.GoTextFace
-	smallFont *text.GoTextFace
+	hudFont *text.GoTextFace
 }
 
 func newGame() *Game {
@@ -98,8 +130,6 @@ func newGame() *Game {
 		playerLane: 2,
 		lcdImg:     ebiten.NewImage(lcdW, lcdH),
 		hudFont:    &text.GoTextFace{Source: bezelFontSource, Size: 8},
-		titleFont:  &text.GoTextFace{Source: bezelFontSource, Size: 14},
-		smallFont:  &text.GoTextFace{Source: bezelFontSource, Size: 8},
 	}
 }
 
@@ -272,41 +302,30 @@ func (g *Game) drawHud(dst *ebiten.Image) {
 	}
 }
 
+// blitH draws img scaled to targetH pixels tall, anchored so (cx,cy) is the
+// horizontal center / vertical bottom of the sprite. Nearest filtering keeps
+// the LCD pixels crisp.
+func blitH(dst, img *ebiten.Image, cx, cy, targetH float32) {
+	b := img.Bounds()
+	s := float64(targetH) / float64(b.Dy())
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Scale(s, s)
+	op.GeoM.Translate(float64(cx)-float64(b.Dx())*s/2, float64(cy)-float64(b.Dy())*s)
+	dst.DrawImage(img, op)
+}
+
 func drawRabbit(dst *ebiten.Image, x, y float32, t float64) {
-	s := float32(1 + int(t*3))
-	// body
-	rectFill(dst, x-s, y-s, s*2, s*2, lcdFg)
-	// head
-	rectFill(dst, x+s-1, y-s-1, 2, 2, lcdFg)
-	// ears
-	px(dst, x+s, y-s-2, lcdFg)
-	px(dst, x+s-2, y-s-2, lcdFg)
-	// feet stretch on hop
-	stretch := float32(int(math.Abs(math.Sin(t*14)) * 2))
-	px(dst, x-s, y+s, lcdFg)
-	px(dst, x-s-stretch, y+s, lcdFg)
+	// Grows from far (small) to near (large); the hop cycle picks one of 4 frames.
+	h := float32(6 + t*22)
+	frame := rabbitImgs[int(t*16)%len(rabbitImgs)]
+	blitH(dst, frame, x, y+h/2, h)
 }
 
 func (g *Game) drawScooter(dst *ebiten.Image, x, y float32, blink bool) {
 	if blink && (g.frame/4)%2 == 0 {
 		return
 	}
-	// wheels
-	circStroke(dst, x-6, y+4, 3, lcdFg)
-	circStroke(dst, x+6, y+4, 3, lcdFg)
-	px(dst, x-6, y+4, lcdFg)
-	px(dst, x+6, y+4, lcdFg)
-	// deck
-	rectFill(dst, x-8, y, 16, 3, lcdFg)
-	// seat post + seat
-	line(dst, x+4, y, x+4, y-5, lcdFg)
-	rectFill(dst, x+2, y-6, 5, 2, lcdFg)
-	// handlebar column
-	line(dst, x-4, y, x-5, y-8, lcdFg)
-	// handlebars
-	line(dst, x-8, y-8, x-2, y-8, lcdFg)
-	// rider head
-	circStroke(dst, x-5, y-12, 2, lcdFg)
+	blitH(dst, scooterImg, x, y+8, 24)
 }
 
 func (g *Game) drawPlay(dst *ebiten.Image) {
@@ -355,52 +374,6 @@ func (g *Game) drawOver(dst *ebiten.Image) {
 	}
 }
 
-// --- bezel (Game & Watch case art) ---
-
-func (g *Game) drawBezel(dst *ebiten.Image) {
-	// Outer red frame
-	dst.Fill(bezelRed)
-	// Tan inner panel
-	rectFill(dst, 4, 4, screenW-8, screenH-8, bezelTan)
-
-	// "JÁTSZ & NÉZZ" boxed logo (top-left)
-	logoX, logoY, logoW, logoH := float32(8), float32(6), float32(56), float32(36)
-	rectStroke(dst, logoX, logoY, logoW, logoH, bezelDark)
-	rectStroke(dst, logoX+1, logoY+1, logoW-2, logoH-2, bezelDark)
-	drawTextCentered(dst, "JÁTSZ", float64(logoX+logoW/2), float64(logoY+4), g.smallFont, bezelDark)
-	drawTextCentered(dst, "&", float64(logoX+logoW/2), float64(logoY+15), g.smallFont, bezelDark)
-	drawTextCentered(dst, "NÉZZ", float64(logoX+logoW/2), float64(logoY+25), g.smallFont, bezelDark)
-
-	// Center title "NYÚLÓS RUGÓS"
-	drawTextCentered(dst, "NYÚLÓS RUGÓS", float64(screenW)/2, 18, g.titleFont, bezelDark)
-
-	// Wheat field on right bezel (printed art)
-	g.drawWheatField(dst, 286, 78)
-
-	// LCD inner frame (dark groove around the active screen)
-	rectFill(dst, lcdOffX-4, lcdOffY-4, lcdW+8, lcdH+8, bezelDark)
-	rectFill(dst, lcdOffX-2, lcdOffY-2, lcdW+4, lcdH+4, color.RGBA{0x15, 0x15, 0x18, 0xff})
-}
-
-func (g *Game) drawWheatField(dst *ebiten.Image, vx, vy float32) {
-	// diagonal hatching emanating from a vanishing point — wheat rows
-	for i := 0; i < 14; i++ {
-		angle := math.Pi*0.55 + float64(i)*math.Pi*0.025
-		ex := vx + float32(math.Cos(angle)*46)
-		ey := vy + float32(math.Sin(angle)*46)
-		line(dst, vx, vy, ex, ey, wheatGold)
-	}
-	// grass tufts along the road edge
-	for i := 0; i < 7; i++ {
-		gy := vy + 6 + float32(i)*8
-		gx := vx - 6 - float32(i)
-		px(dst, gx, gy, grassGreen)
-		px(dst, gx+1, gy-1, grassGreen)
-		px(dst, gx-1, gy-1, grassGreen)
-		px(dst, gx, gy-2, grassGreen)
-	}
-}
-
 // --- ebiten Game interface ---
 
 func (g *Game) Update() error {
@@ -423,7 +396,8 @@ func (g *Game) Update() error {
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
-	g.drawBezel(screen)
+	// Bezel artwork fills the whole logical screen 1:1.
+	screen.DrawImage(bgImg, nil)
 
 	switch g.state {
 	case stateTitle:
@@ -434,8 +408,10 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		g.drawOver(g.lcdImg)
 	}
 
+	// Scale the game world into the bezel's LCD cutout.
 	opts := &ebiten.DrawImageOptions{}
-	opts.GeoM.Translate(lcdOffX, lcdOffY)
+	opts.GeoM.Scale(lcdScale, lcdScale)
+	opts.GeoM.Translate(lcdDrawX, lcdDrawY)
 	screen.DrawImage(g.lcdImg, opts)
 }
 
@@ -444,7 +420,7 @@ func (g *Game) Layout(_, _ int) (int, int) {
 }
 
 func main() {
-	ebiten.SetWindowSize(screenW*scale, screenH*scale)
+	ebiten.SetWindowSize(900, 672)
 	ebiten.SetWindowTitle("Rabbit Roller")
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 	if err := ebiten.RunGame(newGame()); err != nil {

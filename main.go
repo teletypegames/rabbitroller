@@ -291,12 +291,12 @@ func drawLcdTree(dst *ebiten.Image, x, y float32) {
 }
 
 func (g *Game) drawHud(dst *ebiten.Image) {
-	drawText(dst, "PONT", 4, 2, g.hudFont, lcdFg)
-	drawText(dst, fmt.Sprintf("%03d", g.score), 32, 2, g.hudFont, lcdFg)
+	drawText(dst, "SCORE", 4, 2, g.hudFont, lcdFg)
+	drawText(dst, fmt.Sprintf("%03d", g.score), 40, 2, g.hudFont, lcdFg)
 	// Reserve fixed slot for miss markers on the right
 	missSlotRight := float64(lcdW - 4)
 	missSlotX := missSlotRight - float64(maxMiss*8)
-	drawTextRight(dst, "HIBA", missSlotX-2, 2, g.hudFont, lcdFg)
+	drawTextRight(dst, "MISS", missSlotX-2, 2, g.hudFont, lcdFg)
 	for i := 0; i < g.miss; i++ {
 		drawText(dst, "X", missSlotX+float64(i*8), 2, g.hudFont, lcdFg)
 	}
@@ -358,19 +358,19 @@ func (g *Game) drawTitle(dst *ebiten.Image) {
 		drawRabbit(dst, x, y, fake.t)
 	}
 	if (g.frame/30)%2 == 0 {
-		drawTextCentered(dst, "NYOMJ Z-T A KEZDÉSHEZ", 120, 56, g.hudFont, lcdFg)
+		drawTextCentered(dst, "PRESS SPACE TO START", 120, 56, g.hudFont, lcdFg)
 	}
-	drawTextCentered(dst, "NYILAK MOZGÁS   Z START", 120, 72, g.hudFont, lcdFg)
+	drawTextCentered(dst, "ARROWS MOVE   SPACE START", 120, 72, g.hudFont, lcdFg)
 }
 
 func (g *Game) drawOver(dst *ebiten.Image) {
 	g.drawPlay(dst)
 	rectFill(dst, 60, 50, 120, 36, lcdBg)
 	rectStroke(dst, 60, 50, 120, 36, lcdFg)
-	drawTextCentered(dst, "VÉGE", 120, 54, g.hudFont, lcdFg)
-	drawTextCentered(dst, fmt.Sprintf("PONT  %03d", g.score), 120, 66, g.hudFont, lcdFg)
+	drawTextCentered(dst, "GAME OVER", 120, 54, g.hudFont, lcdFg)
+	drawTextCentered(dst, fmt.Sprintf("SCORE  %03d", g.score), 120, 66, g.hudFont, lcdFg)
 	if (g.frame/30)%2 == 0 {
-		drawTextCentered(dst, "Z = ÚJRA", 120, 76, g.hudFont, lcdFg)
+		drawTextCentered(dst, "SPACE = RETRY", 120, 76, g.hudFont, lcdFg)
 	}
 }
 
@@ -420,8 +420,8 @@ func (g *Game) Layout(_, _ int) (int, int) {
 }
 
 func main() {
-	ebiten.SetWindowSize(900, 672)
-	ebiten.SetWindowTitle("Rabbit Roller")
+	ebiten.SetWindowSize(450, 336)
+	ebiten.SetWindowTitle("Rabbit Scooter")
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 	if err := ebiten.RunGame(newGame()); err != nil {
 		log.Fatal(err)

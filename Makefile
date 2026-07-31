@@ -13,7 +13,7 @@ OUTPUT_JS   = $(DIST_DIR)/wasm_exec.js
 OUTPUT_ZIP  = $(PROJECT)-$(VERSION).html.zip
 
 VERSION_FILE = .version
-INDEX_HTML_URL = https://git.teletype.hu/tools/ebitengine-tools/raw/branch/master/web/index.html
+INDEX_HTML_URL = https://git.teletypegames.org/tools/ebitengine-tools/raw/branch/master/web/index.html
 
 all: build
 

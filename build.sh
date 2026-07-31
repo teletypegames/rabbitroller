@@ -14,7 +14,7 @@ cd "$(dirname "$0")"
 PROJECT="rabbitroller"
 DIST_DIR="dist"
 WASM_NAME="game.wasm"
-INDEX_HTML_URL="https://git.teletype.hu/tools/ebitengine-tools/raw/branch/master/web/index.html"
+INDEX_HTML_URL="https://git.teletypegames.org/tools/ebitengine-tools/raw/branch/master/web/index.html"
 
 # --- determine version (arg > metadata.json) --------------------------------
 if [ "${1:-}" != "" ]; then

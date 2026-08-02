@@ -1,0 +1,39 @@
+steps:
+  - name: version
+    image: alpine
+    commands:
+      - 'apk add --no-cache git make jq'
+      - 'make ci-version'
+
+  - name: build
+    image: git.teletypegames.org/internal/ebitengine-builder:latest
+    commands:
+      - 'make ci-export'
+
+  - name: binaries
+    image: git.teletypegames.org/internal/ebitengine-builder:latest
+    commands:
+      - 'make ci-binaries'
+
+  - name: artifact
+    image: alpine
+    environment:
+      DROPAREA_HOST: vps.teletype.hu
+      DROPAREA_PORT: 2223
+      DROPAREA_TARGET_PATH: /home/drop
+      DROPAREA_USER: drop
+      DROPAREA_SSH_PASSWORD:
+        from_secret: droparea_ssh_password
+    commands:
+      - 'apk add --no-cache make openssh-client sshpass'
+      - 'make ci-upload'
+
+  - name: update
+    image: alpine
+    environment:
+      UPDATE_SERVER: https://teletypegames.org
+      UPDATE_SECRET:
+        from_secret: update_secret_key
+    commands:
+      - 'apk add --no-cache make curl'
+      - 'make ci-update'

@@ -4,6 +4,7 @@
   "author": "Teletype Games",
   "desc": "Jump and roll your way through the world as a cute rabbit in this endless runner game.",
   "site": "https://git.teletypegames.org/games/rabbitroller",
+  "repo": "https://git.teletypegames.org/games/rabbitroller",
   "license": "MIT License",
   "version": "1.1.0"
 }

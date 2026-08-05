@@ -182,8 +182,8 @@ ci-upload:
 			"$(UPDATE_SERVER)/build/upload?name=$(PROJECT)&version=$$VERSION" || exit 1; \
 	done
 
-ci-update:
+ci-publish:
 	@VERSION=$$(cat $(VERSION_FILE)); \
 	curl -fsS -X POST -H "X-Update-Secret: $(UPDATE_SECRET)" "$(UPDATE_SERVER)/build/publish?name=$(PROJECT)&platform=ebitengine&version=$$VERSION"
 
-.PHONY: all build wasm export watch clean binaries binaries-mac mac-release binary-win-x86 binary-win-x64 binary-linux-x64 binary-mac-x64 binary-mac-arm64 binary-build binary-build-mac ci-version ci-export ci-binaries ci-upload ci-update
+.PHONY: all build wasm export watch clean binaries binaries-mac mac-release binary-win-x86 binary-win-x64 binary-linux-x64 binary-mac-x64 binary-mac-arm64 binary-build binary-build-mac ci-version ci-export ci-binaries ci-upload ci-publish

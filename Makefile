@@ -16,10 +16,6 @@ VERSION_FILE = .version
 INDEX_HTML_URL = https://git.teletypegames.org/tools/ebitengine-tools/raw/branch/master/web/index.html
 
 # a mac-release lokális futtatásához (CI-ban a woodpecker env adja ugyanezeket)
-DROPAREA_HOST        ?= vps.teletype.hu
-DROPAREA_PORT        ?= 2223
-DROPAREA_USER        ?= drop
-DROPAREA_TARGET_PATH ?= /home/drop
 UPDATE_SERVER        ?= https://teletypegames.org
 
 all: build
@@ -88,15 +84,17 @@ binary-mac-x64:
 binary-mac-arm64:
 	@$(MAKE) binary-build-mac VERSION=$(VERSION) B_GOARCH=arm64 B_TARGET=mac-arm64
 
-# macről futtatandó: felépíti mindkét mac zipet, feltölti a dropareába, majd
-# meghívja az /update-et, ami a meglévő release-hez hozzáfűzi az asseteket
+# macről futtatandó: felépíti mindkét mac zipet, feltölti a /build/upload-dal,
+# majd a /build/publish hozzáfűzi az asseteket a meglévő release-hez
 mac-release: binaries-mac
 	@FILES=""; \
 	for target in $(MAC_TARGETS); do FILES="$$FILES $(PROJECT)-$(VERSION)-$$target.zip"; done; \
-	sshpass -p "$(DROPAREA_SSH_PASSWORD)" scp -o StrictHostKeyChecking=no -P $(DROPAREA_PORT) \
-		$$FILES \
-		$(DROPAREA_USER)@$(DROPAREA_HOST):$(DROPAREA_TARGET_PATH)/; \
-	curl "$(UPDATE_SERVER)/update?secret=$(UPDATE_SECRET)&name=$(PROJECT)&platform=ebitengine&version=$(VERSION)"
+	for f in $$FILES; do \
+		curl -fsS -H "X-Update-Secret: $(UPDATE_SECRET)" \
+			-F "file=@$$f" \
+			"$(UPDATE_SERVER)/build/upload?name=$(PROJECT)&version=$(VERSION)" || exit 1; \
+	done; \
+	curl -fsS -X POST -H "X-Update-Secret: $(UPDATE_SECRET)" "$(UPDATE_SERVER)/build/publish?name=$(PROJECT)&platform=ebitengine&version=$(VERSION)"
 
 # belső helper: egy target buildje + zip egyetlen gyökérmappával
 # (a zipet unixos zip készíti, így a végrehajtási bit megmarad)
@@ -178,12 +176,14 @@ ci-upload:
 	META_DST="$(PROJECT)-$$VERSION.metadata.json"; \
 	BINS=$$(ls $(PROJECT)-$$VERSION-*.zip 2>/dev/null || true); \
 	cp $$META_SRC $$META_DST; \
-	sshpass -p "$(DROPAREA_SSH_PASSWORD)" scp -o StrictHostKeyChecking=no -P $(DROPAREA_PORT) \
-		$$FILE $$META_DST $$BINS \
-		$(DROPAREA_USER)@$(DROPAREA_HOST):$(DROPAREA_TARGET_PATH)/
+	for f in $$FILE $$META_DST $$BINS; do \
+		curl -fsS -H "X-Update-Secret: $(UPDATE_SECRET)" \
+			-F "file=@$$f" \
+			"$(UPDATE_SERVER)/build/upload?name=$(PROJECT)&version=$$VERSION" || exit 1; \
+	done
 
 ci-update:
 	@VERSION=$$(cat $(VERSION_FILE)); \
-	curl "$(UPDATE_SERVER)/update?secret=$(UPDATE_SECRET)&name=$(PROJECT)&platform=ebitengine&version=$$VERSION"
+	curl -fsS -X POST -H "X-Update-Secret: $(UPDATE_SECRET)" "$(UPDATE_SERVER)/build/publish?name=$(PROJECT)&platform=ebitengine&version=$$VERSION"
 
 .PHONY: all build wasm export watch clean binaries binaries-mac mac-release binary-win-x86 binary-win-x64 binary-linux-x64 binary-mac-x64 binary-mac-arm64 binary-build binary-build-mac ci-version ci-export ci-binaries ci-upload ci-update

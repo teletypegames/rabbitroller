@@ -1,0 +1,2 @@
+# The CI pipeline is served by the update server: GET /build/config?platform=ebitengine
+platform: ebitengine

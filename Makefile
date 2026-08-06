@@ -12,7 +12,6 @@ OUTPUT_WASM = $(DIST_DIR)/$(WASM_NAME)
 OUTPUT_JS   = $(DIST_DIR)/wasm_exec.js
 OUTPUT_ZIP  = $(PROJECT)-$(VERSION).html.zip
 
-VERSION_FILE = .version
 INDEX_HTML_URL = https://git.teletypegames.org/tools/ebitengine-tools/raw/branch/master/web/index.html
 
 # a mac-release lokális futtatásához (CI-ban a woodpecker env adja ugyanezeket)
@@ -149,41 +148,4 @@ watch:
 clean:
 	rm -rf $(BIN_DIR) $(DIST_DIR)
 
-ci-version:
-	@if [ -f metadata.json ]; then \
-		VERSION=$$(jq -r '.version' metadata.json); \
-	else \
-		VERSION=$$(git rev-parse --short HEAD); \
-	fi; \
-	BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
-	if [ "$$BRANCH" != "main" ] && [ "$$BRANCH" != "master" ]; then \
-		VERSION="dev-$$VERSION-$$BRANCH"; \
-	fi; \
-	echo $$VERSION > $(VERSION_FILE)
-
-ci-export:
-	@VERSION=$$(cat $(VERSION_FILE)); \
-	$(MAKE) export VERSION=$$VERSION
-
-ci-binaries:
-	@VERSION=$$(cat $(VERSION_FILE)); \
-	$(MAKE) binaries VERSION=$$VERSION
-
-ci-upload:
-	@VERSION=$$(cat $(VERSION_FILE)); \
-	FILE="$(PROJECT)-$$VERSION.html.zip"; \
-	META_SRC="metadata.json"; \
-	META_DST="$(PROJECT)-$$VERSION.metadata.json"; \
-	BINS=$$(ls $(PROJECT)-$$VERSION-*.zip 2>/dev/null || true); \
-	cp $$META_SRC $$META_DST; \
-	for f in $$FILE $$META_DST $$BINS; do \
-		curl -fsS -H "X-Update-Secret: $(UPDATE_SECRET)" \
-			-F "file=@$$f" \
-			"$(UPDATE_SERVER)/build/upload?name=$(PROJECT)&version=$$VERSION" || exit 1; \
-	done
-
-ci-publish:
-	@VERSION=$$(cat $(VERSION_FILE)); \
-	curl -fsS -X POST -H "X-Update-Secret: $(UPDATE_SECRET)" "$(UPDATE_SERVER)/build/publish?name=$(PROJECT)&platform=ebitengine&version=$$VERSION"
-
-.PHONY: all build wasm export watch clean binaries binaries-mac mac-release binary-win-x86 binary-win-x64 binary-linux-x64 binary-mac-x64 binary-mac-arm64 binary-build binary-build-mac ci-version ci-export ci-binaries ci-upload ci-publish
+.PHONY: all build wasm export watch clean binaries binaries-mac mac-release binary-win-x86 binary-win-x64 binary-linux-x64 binary-mac-x64 binary-mac-arm64 binary-build binary-build-mac

@@ -6,6 +6,17 @@
   "updateRemoteUserUID": true,
   "remoteEnv": { "WARPENGINE_DEVCONTAINER": "1" },
   "customizations": {
-    "vscode": { "extensions": ["TeletypeGames.warpengine-toolbox"] }
+    "vscode": {
+      "extensions": [
+        "TeletypeGames.warpengine-toolbox",
+        "ms-vscode.makefile-tools",
+        "golang.go"
+      ],
+      "settings": {
+        "makefile.configureOnOpen": false,
+        "makefile.configureOnEdit": false,
+        "makefile.configureAfterCommand": false
+      }
+    }
   }
 }

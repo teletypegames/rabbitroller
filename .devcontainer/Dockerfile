@@ -26,3 +26,7 @@ RUN set -e; \
 # The Go module cache of the builder image (prefetched modules on some hosts)
 # belongs to dev, so go build can add modules to it.
 RUN if [ -n "$GOPATH" ] && [ -d "$GOPATH" ]; then chown -R 1000:1000 "$GOPATH"; fi
+
+# The Docker CLI: the WarpEngine Toolbox lists and starts the computer's WarpEngine containers through the
+# socket devcontainer.json mounts.
+COPY --from=docker:27-cli /usr/local/bin/docker /usr/local/bin/docker

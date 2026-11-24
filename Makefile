@@ -15,7 +15,7 @@ OUTPUT_ZIP  = $(PROJECT)-$(VERSION).html.zip
 INDEX_HTML_URL = https://git.teletypegames.org/tools/ebitengine-tools/raw/branch/master/web/index.html
 
 # a mac-release lokális futtatásához (CI-ban a woodpecker env adja ugyanezeket)
-UPDATE_SERVER        ?= https://teletypegames.org
+WARP_SERVER          ?= https://teletypegames.org
 
 all: build
 
@@ -46,7 +46,7 @@ export: wasm
 BINARY_TARGETS = win-x86 win-x64 linux-x64
 # mac-x64 / mac-arm64: az Ebitengine darwinon cgo-t igényel (GLFW/Metal),
 # ezért ezek CSAK mac hoston építhetők: `make binaries-mac VERSION=x.y.z`,
-# feltöltés + release frissítés: `make mac-release VERSION=x.y.z`
+# feltöltés + release frissítés: `WARP_TOKEN=<application token: update + upload> make mac-release VERSION=x.y.z`
 MAC_TARGETS = mac-x64 mac-arm64
 
 binaries:
@@ -89,11 +89,11 @@ mac-release: binaries-mac
 	@FILES=""; \
 	for target in $(MAC_TARGETS); do FILES="$$FILES $(PROJECT)-$(VERSION)-$$target.zip"; done; \
 	for f in $$FILES; do \
-		curl -fsS -H "X-Update-Secret: $(UPDATE_SECRET)" \
+		curl -fsS -H "X-Update-Secret: $(WARP_TOKEN)" \
 			-F "file=@$$f" \
-			"$(UPDATE_SERVER)/build/upload?name=$(PROJECT)&version=$(VERSION)" || exit 1; \
+			"$(WARP_SERVER)/build/upload?name=$(PROJECT)&version=$(VERSION)" || exit 1; \
 	done; \
-	curl -fsS -X POST -H "X-Update-Secret: $(UPDATE_SECRET)" "$(UPDATE_SERVER)/build/publish?name=$(PROJECT)&platform=ebitengine&version=$(VERSION)"
+	curl -fsS -X POST -H "X-Update-Secret: $(WARP_TOKEN)" "$(WARP_SERVER)/build/publish?name=$(PROJECT)&platform=ebitengine&version=$(VERSION)"
 
 # belső helper: egy target buildje + zip egyetlen gyökérmappával
 # (a zipet unixos zip készíti, így a végrehajtási bit megmarad)
